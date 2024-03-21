@@ -13,8 +13,9 @@ int main( ) {
     // WARNING: false_max produces incorrect results
     auto false_max = [&] (volatile std::atomic<uint64_t> &counter,
                           const auto& id) -> void {
-        for (uint64_t i = id; i < num_iters; i += num_threads)
+        for (uint64_t i = id; i < num_iters; i += num_threads) {
             if(i > counter) counter = i;
+		}
     };
     auto correct_max = [&] (volatile std::atomic<uint64_t> &counter,
                             const auto& id) -> void {

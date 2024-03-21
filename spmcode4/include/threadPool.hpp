@@ -168,6 +168,7 @@ public:
     // public member function template
     template <typename Func, typename ... Args>
     void spawn(Func && func, Args && ... args) {
+
         if (active_threads < capacity) // enqueue if idling threads
             enqueue(func, args...);
         else                           // else process sequential
@@ -181,7 +182,7 @@ public:
         auto predicate = [&] () -> bool {
             return stop_pool;
         };
-        
+
         cv_wait.wait(unique_lock, predicate);
     }
 };

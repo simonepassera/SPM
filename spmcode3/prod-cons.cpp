@@ -33,11 +33,11 @@ int main(int argc, char *argv[]) {
 		// better to have different per-thread seeds....
 		thread_local std::mt19937   
 			generator(std::hash<std::thread::id>()(std::this_thread::get_id()));
-		std::uniform_int_distribution<int> distribution(0,100);
+		std::uniform_int_distribution<int> distribution(min,max);
 		return distribution(generator);
 	};		
 	auto producer = [&](const std::stop_token &stoken, int id) {	   
-		int i = 0;
+		uint64_t i=0;
 		while (!stoken.stop_requested()) {
 			{
 				std::lock_guard<std::mutex> lock(mtx);
@@ -47,18 +47,35 @@ int main(int argc, char *argv[]) {
 			// do something
 			std::this_thread::sleep_for(std::chrono::milliseconds(random(0,100))); 
 		}
+		
 		std::printf("Producer%d exits\n",id);
 	};
 	auto consumer = [&](const std::stop_token &stoken, int id) {
-		while (!stoken.stop_requested() || !dataq.empty()) {
-			std::unique_lock<std::mutex> lock(mtx);
-			cv.wait(lock, stoken, [&dataq] { return !dataq.empty(); });
-			if (!dataq.empty()) {
-				uint64_t data = dataq.front();
+		std::unique_lock<std::mutex> lock(mtx, std::defer_lock);
+		for(;;) {
+			lock.lock();
+			//  template<class Lock,class Predicate >
+			//  bool wait(Lock& lock,std::stop_token stoken,Predicate pred ) :
+			//
+			//  while (!stoken.stop_requested()) {
+			//    if (pred()) return true;
+			//    wait(lock);
+			//  }
+			//  return pred();
+			// 
+			if (cv.wait(lock, stoken, [&dataq] { return !dataq.empty(); })) {
+				auto data = dataq.front();
+				(void)data;
 				dataq.pop_front();
 				//std::printf("Consumer%d, data=%lu\n", id, data);
-				lock.unlock();
 			}
+			else {
+				if (stoken.stop_requested()) {
+					lock.unlock();
+					break;
+				}
+			}
+			lock.unlock(); 
 			// do something
 			std::this_thread::sleep_for(std::chrono::milliseconds(random(0,100)));
 		}
@@ -74,8 +91,8 @@ int main(int argc, char *argv[]) {
     std::this_thread::sleep_for(std::chrono::seconds(3));	
 	std::cout << "Stopping computation\n";
     stopSrc.request_stop();
-
 	
+	// not needed, here to make valgrind happy!
 	for (auto& thread : consumers) thread.join();
 	for (auto& thread : producers) thread.join();
 

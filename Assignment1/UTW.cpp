@@ -11,6 +11,7 @@
 #include <thread>
 #include <barrier>
 #include <hpc_helpers.hpp>
+#include <threadPool.hpp>
 
 int random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
@@ -36,7 +37,10 @@ void wavefront(const std::vector<int> &M, const uint64_t &N) {
 }
 
 // Parallel code (Static block-cyclic distribution)
-void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, std::barrier<std::__empty_completion> &sync_point, uint64_t num_threads, uint64_t chunk_size) {
+void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size) {
+	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0));
+	std::barrier sync_point(num_threads);
+	
 	auto block_cyclic = [&] (const uint64_t id) -> void {
         // precompute offset, stride, and number of diagonals
         const uint64_t off = id * chunk_size;
@@ -76,12 +80,68 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, std::barri
         thread.join();
 }
 
+// Parallel code (Dynamic distribution)
+void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size) {
+	uint64_t global_diagonal = 0;
+	uint64_t global_lower = 0;
+	std::mutex mutex;
+
+	auto f = [&] () {
+		std::lock_guard<std::mutex> lock_guard(mutex);
+
+		global_diagonal++;
+		global_lower = 0;
+	};
+
+	std::barrier sync_point(num_threads, f);
+	
+	auto task = [&] () -> void {
+		uint64_t lower;
+		uint64_t k;
+
+		while (true) {
+			// fetch current global lower row and global diagonal
+			{
+				std::lock_guard<std::mutex> lock_guard(mutex);
+					
+				k = global_diagonal;
+
+				lower = global_lower;
+				global_lower += chunk_size;
+			}
+
+			if (k >= N) break;
+
+			if (lower < (N-k)) {
+				// compute the upper border of the block (exclusive)
+				const uint64_t upper = std::min(lower+chunk_size, N-k);
+
+				// compute task
+				for (u_int64_t i = lower; i < upper; i++) {
+					work(std::chrono::microseconds(M[i*N + (i+k)]));  
+				}
+			} else {
+				// barrier
+				sync_point.arrive_and_wait();
+			}
+		}
+    };
+
+	std::cout << "Number of threads (wavefront_parallel_dynamic) -> " << num_threads << std::endl;
+
+	ThreadPool TP(num_threads);
+
+	// spawn threads
+    for (uint64_t i = 0; i < num_threads; i++)
+        TP.enqueue(task);
+}
+
 int main(int argc, char *argv[]) {
 	int min    			 = 0;    // default minimum time (in microseconds)
 	int max    			 = 1000; // default maximum time (in microseconds)
 	uint64_t N 			 = 512;  // default size of the matrix (NxN)
 	uint64_t num_threads = 40;	 // default number of threads 
-	uint64_t chunk_size  = 2;	 // default chunk size
+	uint64_t chunk_size  = 1;	 // default chunk size
 	
 	if (argc != 1 && argc != 2 && argc != 6) {
 		std::cout << "use: " << argv[0] << " N [min max threads chunk]" << std::endl;
@@ -105,13 +165,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0));
-
 	// allocate the matrix
 	std::vector<int> M(N*N, -1);
-
-	// create barrier
-	std::barrier sync_point(num_threads);
 
 	uint64_t expected_totaltime = 0;
 
@@ -128,15 +183,19 @@ int main(int argc, char *argv[]) {
 	
 	init();
 
-	std::printf("Estimated compute time ~ %f (ms)\n", expected_totaltime/1000.0);
+	std::printf("Estimated compute time ~ %f (s)\n", expected_totaltime/1000000.0);
 
 	TIMERSTART(wavefront_sequential);
 	wavefront(M, N);
     TIMERSTOP(wavefront_sequential);
 	
 	TIMERSTART(wavefront_parallel_static);
-	wavefront_parallel_static(M, N, sync_point, num_threads, chunk_size);
+	wavefront_parallel_static(M, N, num_threads, chunk_size);
     TIMERSTOP(wavefront_parallel_static);
+
+	TIMERSTART(wavefront_parallel_dynamic);
+	wavefront_parallel_dynamic(M, N, num_threads, chunk_size);
+    TIMERSTOP(wavefront_parallel_dynamic);
 
     return EXIT_SUCCESS;
 }

@@ -28,11 +28,10 @@ void work(std::chrono::microseconds w) {
 // Sequential code
 void wavefront(const std::vector<int> &M, const uint64_t &N) {
 	// for each upper diagonal
-	for(uint64_t k = 0; k < N; ++k) {
+	for(uint64_t k = 0; k < N; k++) {
 		// for each elem. in the diagonal
-		for(uint64_t i = 0; i < (N-k); ++i) {
-			work(std::chrono::microseconds(M[i*N+(i+k)])); 
-		}
+		for(uint64_t i = 0; i < (N-k); i++)
+			work(std::chrono::microseconds(M[i*N+(i+k)]));
 	}
 }
 
@@ -55,9 +54,8 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
 				const uint64_t upper = std::min(lower+chunk_size, N-k);
 
 				// compute task
-				for (u_int64_t i = lower; i < upper; i++) {
-					work(std::chrono::microseconds(M[i*N + (i+k)]));  
-				}
+				for (u_int64_t i = lower; i < upper; i++)
+					work(std::chrono::microseconds(M[i*N + (i+k)]));
 			}
 			
 			// barrier
@@ -68,16 +66,13 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
 		}
     };
 
-    std::vector<std::thread> threads;
-
 	std::cout << "Number of threads (wavefront_parallel_static) -> " << num_threads << std::endl;
+
+    ThreadPool TP(num_threads);
 
 	// spawn threads
     for (uint64_t id = 0; id < num_threads; id++)
-        threads.emplace_back(block_cyclic, id);
-
-    for (auto &thread : threads)
-        thread.join();
+        TP.enqueue(block_cyclic, id);
 }
 
 // Parallel code (Dynamic distribution)
@@ -117,9 +112,8 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 				const uint64_t upper = std::min(lower+chunk_size, N-k);
 
 				// compute task
-				for (u_int64_t i = lower; i < upper; i++) {
-					work(std::chrono::microseconds(M[i*N + (i+k)]));  
-				}
+				for (u_int64_t i = lower; i < upper; i++)
+					work(std::chrono::microseconds(M[i*N + (i+k)]));
 			} else {
 				// barrier
 				sync_point.arrive_and_wait();

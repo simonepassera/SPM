@@ -26,13 +26,12 @@ void work(std::chrono::microseconds w) {
 }
 
 // Sequential code
-void wavefront(const std::vector<int> &M, const uint64_t &N) {
+void wavefront_sequential(const std::vector<int> &M, const uint64_t &N) {
 	// for each upper diagonal
-	for(uint64_t k = 0; k < N; k++) {
+	for(uint64_t k = 0; k < N; k++)
 		// for each elem. in the diagonal
 		for(uint64_t i = 0; i < (N-k); i++)
 			work(std::chrono::microseconds(M[i*N+(i+k)]));
-	}
 }
 
 // Parallel code (Static block-cyclic distribution)
@@ -81,14 +80,12 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 	uint64_t global_lower = 0;
 	std::mutex mutex;
 
-	auto f = [&] () {
-		std::lock_guard<std::mutex> lock_guard(mutex);
-
+	auto on_completion = [&global_diagonal, &global_lower] {
 		global_diagonal++;
 		global_lower = 0;
 	};
 
-	std::barrier sync_point(num_threads, f);
+	std::barrier sync_point(num_threads, on_completion);
 	
 	auto task = [&] () -> void {
 		uint64_t lower;
@@ -105,6 +102,7 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 				global_lower += chunk_size;
 			}
 
+			// exit condition
 			if (k >= N) break;
 
 			if (lower < (N-k)) {
@@ -168,7 +166,7 @@ int main(int argc, char *argv[]) {
 	auto init=[&]() {
 		for(uint64_t k = 0; k < N; k++) {  
 			for(uint64_t i = 0; i < (N-k); i++) {  
-				int t = random(min,max);
+				int t = random(min, max);
 				M[i*N + (i+k)] = t;
 				expected_totaltime += t;				
 			}
@@ -180,7 +178,7 @@ int main(int argc, char *argv[]) {
 	std::printf("Estimated compute time ~ %f (s)\n", expected_totaltime/1000000.0);
 
 	TIMERSTART(wavefront_sequential);
-	wavefront(M, N);
+	wavefront_sequential(M, N);
     TIMERSTOP(wavefront_sequential);
 	
 	TIMERSTART(wavefront_parallel_static);

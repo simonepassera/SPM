@@ -10,8 +10,10 @@
 #include <random>
 #include <thread>
 #include <barrier>
+#include <atomic>
+#include <cassert>
 #include <hpc_helpers.hpp>
-#include <threadPool.hpp>
+
 
 int random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
@@ -31,19 +33,20 @@ void wavefront_sequential(const std::vector<int> &M, const uint64_t &N) {
 	for(uint64_t k = 0; k < N; k++)
 		// for each elem. in the diagonal
 		for(uint64_t i = 0; i < (N-k); i++)
-			work(std::chrono::microseconds(M[i*N+(i+k)]));
+			work(std::chrono::microseconds(M[i*N + (i+k)]));
 }
 
 // Parallel code (Static block-cyclic distribution)
-void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size) {
+void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size, uint64_t expected_totaltime) {
 	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0));
 	std::barrier sync_point(num_threads);
+	std::vector<uint64_t> test_sum (num_threads, 0);
 	
 	auto block_cyclic = [&] (const uint64_t id) -> void {
         // precompute offset, stride, and number of diagonals
         const uint64_t off = id * chunk_size;
         const uint64_t str = num_threads * chunk_size;
-		const uint64_t num_diagonals = N - off;
+		const uint64_t num_diagonals = N-off;
 
 		// for each upper diagonal
 		for(uint64_t k = 0; k < num_diagonals; k++) {
@@ -53,8 +56,10 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
 				const uint64_t upper = std::min(lower+chunk_size, N-k);
 
 				// compute task
-				for (u_int64_t i = lower; i < upper; i++)
+				for (u_int64_t i = lower; i < upper; i++) {
 					work(std::chrono::microseconds(M[i*N + (i+k)]));
+					test_sum[id] += M[i*N + (i+k)];
+				}
 			}
 			
 			// barrier
@@ -67,52 +72,69 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
 
 	std::cout << "Number of threads (wavefront_parallel_static) -> " << num_threads << std::endl;
 
-    ThreadPool TP(num_threads);
+	std::vector<std::thread> threads;
 
 	// spawn threads
     for (uint64_t id = 0; id < num_threads; id++)
-        TP.enqueue(block_cyclic, id);
+        threads.emplace_back(block_cyclic, id);
+
+    for (auto &thread : threads)
+        thread.join();
+
+	uint64_t sum = 0;
+
+	for (auto &time : test_sum)
+		sum += time;
+
+	assert(sum == expected_totaltime);
 }
 
 // Parallel code (Dynamic distribution)
-void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size) {
+void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size, uint64_t expected_totaltime) {
+	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0)); 
+	uint64_t global_max_num_threads = N/chunk_size + (N%chunk_size ? 1 : 0);
 	uint64_t global_diagonal = 0;
-	uint64_t global_lower = 0;
-	std::mutex mutex;
+	std::atomic<uint64_t> global_current_num_threads {num_threads};
+	std::atomic<uint64_t> global_lower {0};
 
-	auto on_completion = [&global_diagonal, &global_lower] {
+	auto on_completion = [&global_diagonal, &global_lower, &global_max_num_threads, N, chunk_size] {
 		global_diagonal++;
-		global_lower = 0;
+		global_max_num_threads = (N-global_diagonal)/chunk_size + ((N-global_diagonal)%chunk_size ? 1 : 0);
+		global_lower.store(0);
 	};
 
 	std::barrier sync_point(num_threads, on_completion);
-	
-	auto task = [&] () -> void {
+
+	std::vector<uint64_t> test_sum (num_threads, 0);
+
+	auto task = [&] (const uint64_t id) -> void {
 		uint64_t lower;
-		uint64_t k;
+		uint64_t current_num_threads;
 
 		while (true) {
-			// fetch current global lower row and global diagonal
-			{
-				std::lock_guard<std::mutex> lock_guard(mutex);
-					
-				k = global_diagonal;
+			// fetch and add current global lower
+			lower = global_lower.fetch_add(chunk_size);
 
-				lower = global_lower;
-				global_lower += chunk_size;
-			}
-
-			// exit condition
-			if (k >= N) break;
-
-			if (lower < (N-k)) {
+			if (lower < (N-global_diagonal)) {
 				// compute the upper border of the block (exclusive)
-				const uint64_t upper = std::min(lower+chunk_size, N-k);
+				const uint64_t upper = std::min(lower+chunk_size, N-global_diagonal);
 
 				// compute task
-				for (u_int64_t i = lower; i < upper; i++)
-					work(std::chrono::microseconds(M[i*N + (i+k)]));
+				for (u_int64_t i = lower; i < upper; i++) {
+					work(std::chrono::microseconds(M[i*N + (i+global_diagonal)]));
+					test_sum[id] += M[i*N + (i+global_diagonal)];
+				}
 			} else {
+				current_num_threads = global_current_num_threads.load(std::memory_order_acquire);
+
+				while (current_num_threads > global_max_num_threads) {
+					if (global_current_num_threads.compare_exchange_weak(current_num_threads, current_num_threads-1, std::memory_order_release, std::memory_order_acquire)) {
+						// barrier
+						sync_point.arrive_and_drop();
+						return;
+					}
+				}
+				
 				// barrier
 				sync_point.arrive_and_wait();
 			}
@@ -121,11 +143,21 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 
 	std::cout << "Number of threads (wavefront_parallel_dynamic) -> " << num_threads << std::endl;
 
-	ThreadPool TP(num_threads);
+	std::vector<std::thread> threads;
 
 	// spawn threads
-    for (uint64_t i = 0; i < num_threads; i++)
-        TP.enqueue(task);
+    for (uint64_t id = 0; id < num_threads; id++)
+        threads.emplace_back(task, id);
+
+    for (auto &thread : threads)
+        thread.join();
+
+	uint64_t sum = 0;
+
+	for (auto &time : test_sum)
+		sum += time;
+
+	assert(sum == expected_totaltime);
 }
 
 int main(int argc, char *argv[]) {
@@ -163,7 +195,7 @@ int main(int argc, char *argv[]) {
 	uint64_t expected_totaltime = 0;
 
 	// init function
-	auto init=[&]() {
+	auto init = [&] () {
 		for(uint64_t k = 0; k < N; k++) {  
 			for(uint64_t i = 0; i < (N-k); i++) {  
 				int t = random(min, max);
@@ -182,11 +214,11 @@ int main(int argc, char *argv[]) {
     TIMERSTOP(wavefront_sequential);
 	
 	TIMERSTART(wavefront_parallel_static);
-	wavefront_parallel_static(M, N, num_threads, chunk_size);
+	wavefront_parallel_static(M, N, num_threads, chunk_size, expected_totaltime);
     TIMERSTOP(wavefront_parallel_static);
 
 	TIMERSTART(wavefront_parallel_dynamic);
-	wavefront_parallel_dynamic(M, N, num_threads, chunk_size);
+	wavefront_parallel_dynamic(M, N, num_threads, chunk_size, expected_totaltime);
     TIMERSTOP(wavefront_parallel_dynamic);
 
     return EXIT_SUCCESS;

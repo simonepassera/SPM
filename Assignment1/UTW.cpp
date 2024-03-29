@@ -14,6 +14,13 @@
 #include <cassert>
 #include <hpc_helpers.hpp>
 
+#ifdef TEST
+	#define TEST_VAR ,expected_totaltime
+	#define TEST_ARG ,uint64_t expected_totaltime
+#else
+	#define TEST_VAR
+	#define TEST_ARG
+#endif
 
 int random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
@@ -37,11 +44,14 @@ void wavefront_sequential(const std::vector<int> &M, const uint64_t &N) {
 }
 
 // Parallel code (Static block-cyclic distribution)
-void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size, uint64_t expected_totaltime) {
+void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size TEST_ARG) {
 	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0));
 	std::barrier sync_point(num_threads);
-	std::vector<uint64_t> test_sum (num_threads, 0);
 	
+	#ifdef TEST
+		std::vector<uint64_t> test_sum (num_threads, 0);
+	#endif
+
 	auto block_cyclic = [&] (const uint64_t id) -> void {
         // precompute offset, stride, and number of diagonals
         const uint64_t off = id * chunk_size;
@@ -58,7 +68,10 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
 				// compute task
 				for (u_int64_t i = lower; i < upper; i++) {
 					work(std::chrono::microseconds(M[i*N + (i+k)]));
-					test_sum[id] += M[i*N + (i+k)];
+					
+					#ifdef TEST
+						test_sum[id] += M[i*N + (i+k)];
+					#endif
 				}
 			}
 			
@@ -81,16 +94,18 @@ void wavefront_parallel_static(const std::vector<int> &M, uint64_t N, uint64_t n
     for (auto &thread : threads)
         thread.join();
 
-	uint64_t sum = 0;
+	#ifdef TEST
+		uint64_t sum = 0;
 
-	for (auto &time : test_sum)
-		sum += time;
+		for (auto &time : test_sum)
+			sum += time;
 
-	assert(sum == expected_totaltime);
+		assert(sum == expected_totaltime);
+	#endif
 }
 
 // Parallel code (Dynamic distribution)
-void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size, uint64_t expected_totaltime) {
+void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t num_threads, uint64_t chunk_size TEST_ARG) {
 	num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0)); 
 	uint64_t global_max_num_threads = N/chunk_size + (N%chunk_size ? 1 : 0);
 	uint64_t global_diagonal = 0;
@@ -105,7 +120,9 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 
 	std::barrier sync_point(num_threads, on_completion);
 
-	std::vector<uint64_t> test_sum (num_threads, 0);
+	#ifdef TEST
+		std::vector<uint64_t> test_sum (num_threads, 0);
+	#endif
 
 	auto task = [&] (const uint64_t id) -> void {
 		uint64_t lower;
@@ -122,7 +139,10 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 				// compute task
 				for (u_int64_t i = lower; i < upper; i++) {
 					work(std::chrono::microseconds(M[i*N + (i+global_diagonal)]));
-					test_sum[id] += M[i*N + (i+global_diagonal)];
+
+					#ifdef TEST
+						test_sum[id] += M[i*N + (i+global_diagonal)];
+					#endif
 				}
 			} else {
 				current_num_threads = global_current_num_threads.load(std::memory_order_acquire);
@@ -130,7 +150,9 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
 				while (current_num_threads > global_max_num_threads) {
 					if (global_current_num_threads.compare_exchange_weak(current_num_threads, current_num_threads-1, std::memory_order_release, std::memory_order_acquire)) {
 						// barrier
-						sync_point.arrive_and_drop();
+						if (global_current_num_threads != 0)
+							sync_point.arrive_and_drop();
+						
 						return;
 					}
 				}
@@ -152,12 +174,14 @@ void wavefront_parallel_dynamic(const std::vector<int> &M, uint64_t N, uint64_t 
     for (auto &thread : threads)
         thread.join();
 
-	uint64_t sum = 0;
+	#ifdef TEST
+		uint64_t sum = 0;
 
-	for (auto &time : test_sum)
-		sum += time;
+		for (auto &time : test_sum)
+			sum += time;
 
-	assert(sum == expected_totaltime);
+		assert(sum == expected_totaltime);
+	#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -214,11 +238,11 @@ int main(int argc, char *argv[]) {
     TIMERSTOP(wavefront_sequential);
 	
 	TIMERSTART(wavefront_parallel_static);
-	wavefront_parallel_static(M, N, num_threads, chunk_size, expected_totaltime);
+	wavefront_parallel_static(M, N, num_threads, chunk_size TEST_VAR);
     TIMERSTOP(wavefront_parallel_static);
 
 	TIMERSTART(wavefront_parallel_dynamic);
-	wavefront_parallel_dynamic(M, N, num_threads, chunk_size, expected_totaltime);
+	wavefront_parallel_dynamic(M, N, num_threads, chunk_size TEST_VAR);
     TIMERSTOP(wavefront_parallel_dynamic);
 
     return EXIT_SUCCESS;

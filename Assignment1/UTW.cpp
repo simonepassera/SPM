@@ -2,7 +2,7 @@
 // First SPM Assignment a.a. 23/24.
 //
 // compile:
-// g++ -std=c++20 -O3 -march=native -mavx2 -ffast-math -I<path-to-include> [-DTEST] UTW.cpp -o UTW
+// g++ -std=c++20 -O3 -march=native -I<path-to-include> [-DTEST] UTW.cpp -o UTW
 //
 
 #include <iostream>
@@ -22,6 +22,18 @@
 	#define TEST_ARG
 #endif
 
+#ifdef _OPENMP
+	#define OMP_VAR ,num_threads,chunk_size
+	#define OMP_ARG ,uint64_t num_threads,uint64_t chunk_size
+	#define OMP_START TIMERSTART(wavefront_openmp);
+	#define OMP_STOP TIMERSTOP(wavefront_openmp);
+#else
+	#define OMP_VAR
+	#define OMP_ARG
+	#define OMP_START TIMERSTART(wavefront_sequential);
+	#define OMP_STOP TIMERSTOP(wavefront_sequential);
+#endif
+
 int random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
 	std::uniform_int_distribution<int> distribution(min, max);
@@ -35,10 +47,11 @@ void work(std::chrono::microseconds w) {
 }
 
 // Sequential code
-void wavefront_sequential(const std::vector<int> &M, const uint64_t &N) {
+void wavefront_sequential(const std::vector<int> &M, const uint64_t &N  OMP_ARG) {
 	// for each upper diagonal
 	for(uint64_t k = 0; k < N; k++)
 		// for each elem. in the diagonal
+		#pragma omp parallel for num_threads(num_threads) schedule(dynamic, chunk_size)
 		for(uint64_t i = 0; i < (N-k); i++)
 			work(std::chrono::microseconds(M[i*N + (i+k)]));
 }
@@ -233,10 +246,10 @@ int main(int argc, char *argv[]) {
 
 	std::printf("Estimated compute time ~ %f (s)\n", expected_totaltime/1000000.0);
 
-	TIMERSTART(wavefront_sequential);
-	wavefront_sequential(M, N);
-    TIMERSTOP(wavefront_sequential);
-	
+	OMP_START
+	wavefront_sequential(M, N OMP_VAR);
+    OMP_STOP
+
 	TIMERSTART(wavefront_parallel_static);
 	wavefront_parallel_static(M, N, num_threads, chunk_size TEST_VAR);
     TIMERSTOP(wavefront_parallel_static);

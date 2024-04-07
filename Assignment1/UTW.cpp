@@ -2,7 +2,7 @@
 // First SPM Assignment a.a. 23/24.
 //
 // compile:
-// g++ -std=c++20 -O3 -march=native -I<path-to-include> [-DTEST] UTW.cpp -o UTW
+// g++ -std=c++20 -O3 -march=native -I<path-to-include> [-DTEST] [-fopenmp] UTW.cpp -o UTW
 //
 
 #include <iostream>

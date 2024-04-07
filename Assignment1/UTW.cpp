@@ -48,15 +48,10 @@ void work(std::chrono::microseconds w) {
 
 // Sequential code
 void wavefront_sequential(const std::vector<int> &M, const uint64_t &N  OMP_ARG) {
-	#ifdef _OPENMP
-		num_threads = std::min(num_threads, N/chunk_size + (N%chunk_size ? 1 : 0));
-		std::cout << "Number of threads (wavefront_openmp) -> " << num_threads << std::endl;
-	#endif
-
 	// for each upper diagonal
 	for(uint64_t k = 0; k < N; k++)
 		// for each elem. in the diagonal
-		#pragma omp parallel for num_threads(num_threads) schedule(dynamic, chunk_size)
+		#pragma omp parallel for num_threads(std::min(num_threads, (N-k)/chunk_size + ((N-k)%chunk_size ? 1 : 0))) schedule(dynamic, chunk_size)
 		for(uint64_t i = 0; i < (N-k); i++)
 			work(std::chrono::microseconds(M[i*N + (i+k)]));
 }

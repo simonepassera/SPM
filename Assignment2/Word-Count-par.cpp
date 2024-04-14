@@ -8,6 +8,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
+#include <numeric>
 
 using umap = std::unordered_map<std::string, uint64_t>;
 using pair = std::pair<std::string, uint64_t>;
@@ -24,7 +25,7 @@ using ranking = std::multiset<pair, Comp>;
 uint64_t total_words{0};
 volatile uint64_t extraworkXline{0};
 
-void tokenize_line(const std::string& line, umap* um, omp_lock_t* filelock) {
+void tokenize_line(const std::string& line, umap* um, omp_lock_t* filelock, int num_lines) {
 	char *tmpstr;
 	char *token = strtok_r(const_cast<char*>(line.c_str()), " \r\n", &tmpstr);
 
@@ -39,7 +40,7 @@ void tokenize_line(const std::string& line, umap* um, omp_lock_t* filelock) {
 		token = strtok_r(NULL, " \r\n", &tmpstr);
 	}
 
-	for(volatile uint64_t j{0}; j < extraworkXline; j++);
+	for(volatile uint64_t j{0}; j < (extraworkXline * num_lines); j++);
 }
 
 void compute_file(const std::string& filename, umap* um, int num_lines) {
@@ -60,9 +61,9 @@ void compute_file(const std::string& filename, umap* um, int num_lines) {
 					l--;
 				}
 			
-			#pragma omp task firstprivate(multiple_lines, um) shared(filelock)
+			#pragma omp task firstprivate(multiple_lines, um, num_lines) shared(filelock)
 			{
-				tokenize_line(multiple_lines, um, &filelock);
+				tokenize_line(multiple_lines, um, &filelock, num_lines);
 			}
 
 			l = num_lines;
@@ -80,6 +81,8 @@ int main(int argc, char *argv[]) {
 	auto usage_and_exit = [argv] () {
 		std::printf("use: %s filelist.txt [threads] [lines] [extraworkXline] [topk] [showresults]\n", argv[0]);
 		std::printf("     filelist.txt contains one txt filename per line\n");
+		std::printf("     threads is the number of threads used, its default value is the maximum number of logical cores\n");
+		std::printf("     lines is the maximum number of rows processed per thread, its default value is 1\n");
 		std::printf("     extraworkXline is the extra work done for each line, it is an integer value whose default is 0\n");
 		std::printf("     topk is an integer number, its default value is 10 (top 10 words)\n");
 		std::printf("     showresults is 0 or 1, if 1 the output is shown on the standard output\n\n");
@@ -87,7 +90,7 @@ int main(int argc, char *argv[]) {
 	};
 
 	std::vector<std::string> filenames;
-	uint64_t num_threads = 8;
+	uint64_t num_threads = omp_get_max_threads();
 	uint64_t num_lines = 1;
 	size_t topk = 10;
 	bool showresults = false;
@@ -205,11 +208,15 @@ int main(int argc, char *argv[]) {
 
 	auto stop1 = omp_get_wtime();
 
+	umap umap_results;
+
+	for (umap *um : umap_vec)
+		umap_results = std::accumulate(um->begin(), um->end(), umap_results, [] (umap &m, const pair &p) {return (m[p.first] += p.second, m);});
+	
 	// sorting in descending order
 	ranking rank;
 
-	for (umap *um : umap_vec)
-		rank.insert(um->begin(), um->end());
+	rank.insert(umap_results.begin(), umap_results.end());
 
 	auto stop2 = omp_get_wtime();
 

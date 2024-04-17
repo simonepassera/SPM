@@ -25,34 +25,26 @@ using ranking = std::multiset<pair, Comp>;
 uint64_t total_words{0};
 volatile uint64_t extraworkXline{0};
 
-void tokenize_line(const std::string* line, umap* um, omp_lock_t* filelock, int num_lines) {
+void tokenize_line(const std::string* line, umap* um, int num_lines) {
 	char *tmpstr;
 	char *token = strtok_r(const_cast<char*>(line->c_str()), " \r\n", &tmpstr);
 
-	umap temp;
-
 	while(token) {
-		temp[std::string(token)]++;
+		um->operator[](std::string(token))++;
+
+		#pragma omp atomic
+		total_words++;
+
 		token = strtok_r(NULL, " \r\n", &tmpstr);
 	}
 
-	delete line;
-
-	omp_set_lock(filelock);
-
-	for (auto temp_pair : temp) {
-		um->operator[](temp_pair.first) +=  temp_pair.second;
-		total_words += temp_pair.second;
-	}
-
-	omp_unset_lock(filelock);
-
 	for(volatile uint64_t j{0}; j < (extraworkXline * num_lines); j++);
+
+	delete line;
 }
 
 void compute_file(const std::string& filename, umap* um, int num_lines) {
-	omp_lock_t filelock;
-	omp_init_lock(&filelock);
+	std::vector<umap*> umap_vec;
 
 	std::ifstream file(filename, std::ios_base::in);
 
@@ -71,10 +63,13 @@ void compute_file(const std::string& filename, umap* um, int num_lines) {
 					multiple_lines->append(line);
 					l--;
 				}
+
+			umap *temp_umap = new umap();
+			umap_vec.push_back(temp_umap);
 			
-			#pragma omp task firstprivate(multiple_lines, um, num_lines) shared(filelock)
+			#pragma omp task firstprivate(multiple_lines, temp_umap, num_lines)
 			{
-				tokenize_line(multiple_lines, um, &filelock, num_lines);
+				tokenize_line(multiple_lines, temp_umap, num_lines);
 			}
 		}
 	} 
@@ -82,7 +77,15 @@ void compute_file(const std::string& filename, umap* um, int num_lines) {
 	file.close();
 
 	#pragma omp taskwait
-	omp_destroy_lock(&filelock);
+
+	for (umap *m : umap_vec) {
+		for (auto it = m->begin(); it != m->end();) {
+			(*um)[it->first] += it->second;
+			it = m->erase(it);
+		}
+
+		delete m;
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -195,49 +198,26 @@ int main(int argc, char *argv[]) {
 	}
 
 	// used for storing results
-	std::vector<umap*> umap_vec;
-	umap_vec.reserve(filenames.size());
+	umap *umap_results = new umap();
 
 	// start the time
 	auto start = omp_get_wtime();
 
-	#pragma omp parallel num_threads(num_threads) shared(filenames, umap_vec, num_lines)
+	#pragma omp parallel num_threads(num_threads) shared(filenames, umap_results, num_lines)
 	{
 		#pragma omp master
 		{
-			for (auto f : filenames) {
-				umap *um = new umap();
-				
-				umap_vec.push_back(um);
-				compute_file(f, um, num_lines);
-			}
+			for (auto f : filenames)
+				compute_file(f, umap_results, num_lines);
 		}
 	}
 
 	auto stop1 = omp_get_wtime();
 
-	/*for (umap *um : umap_vec)
-		umap_results = std::accumulate(um->begin(), um->end(), umap_results, [] (umap &m, const pair &p) {return (m[p.first] += p.second, m);});
-	*/
-
-	umap *umap_results = umap_vec.back();
-	umap_vec.pop_back();
-
-	for (umap *um : umap_vec) {
-		for (auto it = um->begin(); it != um->end();) {
-			(*umap_results)[it->first] += it->second;
-			it = um->erase(it);
-		}
-
-		delete um;
-	}
-
 	// sorting in descending order
 	ranking rank;
 
 	rank.insert(umap_results->begin(), umap_results->end());
-
-	delete umap_results;
 
 	auto stop2 = omp_get_wtime();
 
@@ -253,4 +233,6 @@ int main(int argc, char *argv[]) {
 		for (size_t i=0; i < std::clamp(topk, 1ul, rank.size()); ++i)
 			std::cout << top->first << '\t' << top++->second << '\n';
 	}
+
+	delete umap_results;
 }

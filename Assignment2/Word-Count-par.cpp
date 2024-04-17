@@ -25,20 +25,27 @@ using ranking = std::multiset<pair, Comp>;
 uint64_t total_words{0};
 volatile uint64_t extraworkXline{0};
 
-void tokenize_line(const std::string& line, umap* um, omp_lock_t* filelock, int num_lines) {
+void tokenize_line(const std::string* line, umap* um, omp_lock_t* filelock, int num_lines) {
 	char *tmpstr;
-	char *token = strtok_r(const_cast<char*>(line.c_str()), " \r\n", &tmpstr);
+	char *token = strtok_r(const_cast<char*>(line->c_str()), " \r\n", &tmpstr);
+
+	umap temp;
 
 	while(token) {
-		omp_set_lock(filelock);
-		
-		um->operator[](std::string(token))++;
-		total_words++;
-
-		omp_unset_lock(filelock);
-
+		temp[std::string(token)]++;
 		token = strtok_r(NULL, " \r\n", &tmpstr);
 	}
+
+	delete line;
+
+	omp_set_lock(filelock);
+
+	for (auto temp_pair : temp) {
+		um->operator[](temp_pair.first) +=  temp_pair.second;
+		total_words += temp_pair.second;
+	}
+
+	omp_unset_lock(filelock);
 
 	for(volatile uint64_t j{0}; j < (extraworkXline * num_lines); j++);
 }
@@ -50,14 +57,18 @@ void compute_file(const std::string& filename, umap* um, int num_lines) {
 	std::ifstream file(filename, std::ios_base::in);
 
 	if (file.is_open()) {
+		std::string *multiple_lines;
 		std::string line;
-		std::string multiple_lines;
-		int l = num_lines;
+		int l;
 
 		while(!file.eof()) {
+			multiple_lines = new std::string();
+			l = num_lines;
+
 			while((l != 0) && !std::getline(file, line).eof())
 				if (!line.empty()) {
-					multiple_lines += " " + line;
+					multiple_lines->append(" ");
+					multiple_lines->append(line);
 					l--;
 				}
 			
@@ -65,9 +76,6 @@ void compute_file(const std::string& filename, umap* um, int num_lines) {
 			{
 				tokenize_line(multiple_lines, um, &filelock, num_lines);
 			}
-
-			l = num_lines;
-			multiple_lines.clear();
 		}
 	} 
 
@@ -208,15 +216,28 @@ int main(int argc, char *argv[]) {
 
 	auto stop1 = omp_get_wtime();
 
-	umap umap_results;
-
-	for (umap *um : umap_vec)
+	/*for (umap *um : umap_vec)
 		umap_results = std::accumulate(um->begin(), um->end(), umap_results, [] (umap &m, const pair &p) {return (m[p.first] += p.second, m);});
-	
+	*/
+
+	umap *umap_results = umap_vec.back();
+	umap_vec.pop_back();
+
+	for (umap *um : umap_vec) {
+		for (auto it = um->begin(); it != um->end();) {
+			(*umap_results)[it->first] += it->second;
+			it = um->erase(it);
+		}
+
+		delete um;
+	}
+
 	// sorting in descending order
 	ranking rank;
 
-	rank.insert(umap_results.begin(), umap_results.end());
+	rank.insert(umap_results->begin(), umap_results->end());
+
+	delete umap_results;
 
 	auto stop2 = omp_get_wtime();
 
@@ -232,8 +253,4 @@ int main(int argc, char *argv[]) {
 		for (size_t i=0; i < std::clamp(topk, 1ul, rank.size()); ++i)
 			std::cout << top->first << '\t' << top++->second << '\n';
 	}
-
-	for (umap *um : umap_vec)
-		delete um;
 }
-	

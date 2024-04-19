@@ -1,3 +1,10 @@
+//
+// Second SPM Assignment a.a. 23/24.
+//
+// compile:
+// g++ -std=c++17 -O3 -march=native -fopenmp Word-Count-par.cpp -o Word-Count-par
+//
+
 #include <omp.h>
 #include <cstring>
 #include <vector>

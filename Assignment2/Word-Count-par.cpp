@@ -228,7 +228,7 @@ int main(int argc, char *argv[]) {
 
 	auto stop2 = omp_get_wtime();
 
-	std::printf("Compute time (s) %f\nSorting time (s) %f\n", stop1 - start, stop2 - stop1);
+	std::printf("Total   time (s) %f\nCompute time (s) %f\nSorting time (s) %f\n", stop2 - start, stop1 - start, stop2 - stop1);
 	
 	if (showresults) {
 		// show the results

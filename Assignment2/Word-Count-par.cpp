@@ -28,59 +28,47 @@ struct Comp {
 using ranking = std::multiset<pair, Comp>;
 
 // ------ globals --------
-uint64_t total_words{0};
-volatile uint64_t extraworkXline{0};
+uint64_t total_words {0};
+volatile uint64_t extraworkXline {0};
 
-void tokenize_line(const std::string* line, std::vector<umap>* umap_results) {
+void tokenize_line(const std::string& line, std::vector<umap>& umap_results) {
 	char *tmpstr;
-	char *token = strtok_r(const_cast<char*>(line->c_str()), " \r\n", &tmpstr);
+	char *token = strtok_r(const_cast<char*>(line.c_str()), " \r\n", &tmpstr);
 
 	while(token) {
-		(*umap_results)[omp_get_thread_num()][std::string(token)]++;
+		umap_results[omp_get_thread_num()][std::string(token)]++;
 		token = strtok_r(NULL, " \r\n", &tmpstr);
 
 		#pragma omp atomic
 		total_words++;
 	}
 
-	for(volatile uint64_t j{0}; j < extraworkXline; j++);
+	for(volatile uint64_t j {0}; j < extraworkXline; j++);
 }
 
-void compute_file(const std::string& filename, std::vector<umap>* umap_results, uint64_t num_lines) {
+void compute_file(const std::string& filename, std::vector<umap>& umap_results, uint64_t num_lines) {
 	std::ifstream file(filename, std::ios_base::in);
 
 	if (file.is_open()) {
-		std::vector<std::string*> *lines;
-		std::string *line;
+		std::vector<std::string> *lines;
+		std::string line;
 		int l;
 
 		while(!file.eof()) {
-			lines = new std::vector<std::string*>();
+			lines = new std::vector<std::string>();
 			lines->reserve(num_lines);
 			l = num_lines;
 
-			while(l != 0) {
-				line = new std::string();
-
-				if (std::getline(file, *line).eof()) {
-					delete line;
-					break;
-				}
-
-				if (!line->empty()) {
-					lines->push_back(line);
+			while((l != 0) && !std::getline(file, line).eof())
+				if (!line.empty()) {
+					lines->emplace_back(line);
 					l--;
-				} else {
-					delete line;
 				}
-			}
 			
-			#pragma omp task default(none) firstprivate(lines, umap_results)
+			#pragma omp task default(none) firstprivate(lines) shared(umap_results)
 			{
-				for (auto i = lines->begin(); i != lines->end(); i++) {
+				for (auto i = lines->begin(); i != lines->end(); i++)
 					tokenize_line(*i, umap_results);
-					delete *i;
-				}
 
 				delete lines;
 			}
@@ -200,7 +188,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	// used for storing results
-	std::vector<umap> *umap_results = new std::vector<umap>(num_threads);
+	std::vector<umap> umap_results(num_threads);
 
 	// start the time
 	auto start = omp_get_wtime();
@@ -216,15 +204,13 @@ int main(int argc, char *argv[]) {
 
 	if (num_threads > 1) {
 		for (int id = 1; id < num_threads; id++)
-			for (auto i = (*umap_results)[id].begin(); i != (*umap_results)[id].end(); i++)
-				(*umap_results)[0][i->first] += i->second;
+			for (auto i = umap_results[id].begin(); i != umap_results[id].end(); i++)
+				umap_results[0][i->first] += i->second;
 	}
 
 	// sorting in descending order
 	ranking rank;
-	rank.insert((*umap_results)[0].begin(), (*umap_results)[0].end());
-
-	delete umap_results;
+	rank.insert(umap_results[0].begin(), umap_results[0].end());
 
 	auto stop2 = omp_get_wtime();
 

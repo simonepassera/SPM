@@ -2,9 +2,10 @@
 // Third SPM Assignment a.a. 23/24.
 //
 // compile:
-// g++ -std=c++17 -O3 -march=native -pthread -I /home/simo/Documents/SPM/fastflow -Wall -DNDEBUG Word-Count-par.cpp -o Word-Count-par
+// g++ -std=c++17 -O3 -march=native -fopenmp -I /home/simo/Documents/SPM/fastflow Word-Count-par.cpp -o Word-Count-par
 //
 
+#include <omp.h> // used here just for omp_get_wtime()
 #include <cstring>
 #include <vector>
 #include <set>
@@ -14,6 +15,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
+#include <atomic>
 #include <ff/ff.hpp>
 
 using namespace ff;
@@ -30,22 +32,34 @@ struct Comp {
 using ranking = std::multiset<pair, Comp>;
 
 // ------ globals --------
-uint64_t total_words {0};
+std::atomic<uint64_t> total_words {0};
 volatile uint64_t extraworkXline {0};
 
-struct Reader : ff_node_t<std::string> {
-    Reader(const std::vector<std::string> &filenames_) : filenames(filenames_) {}
+struct Reader : ff_node_t<std::vector<std::string>> {
+    Reader(const std::vector<std::string> &filenames_, const uint64_t num_lines_) : filenames(filenames_), num_lines(num_lines_) {}
 
-    std::string* svc(std::string*) {
+    std::vector<std::string>* svc(std::vector<std::string>*) {
 		for (std::string f : filenames) {
 			std::ifstream file(f, std::ios_base::in);
 
 			if (file.is_open()) {
+				std::vector<std::string> *lines;
 				std::string line;
-		
-				while(std::getline(file, line))
-					if (!line.empty())
-						ff_send_out(new std::string(line));
+				int l;
+
+				while(!file.eof()) {
+					lines = new std::vector<std::string>();
+					lines->reserve(num_lines);
+					l = num_lines;
+
+					while((l != 0) && !std::getline(file, line).eof())
+						if (!line.empty()) {
+							lines->emplace_back(line);
+							l--;
+						}
+
+					ff_send_out(lines);
+				}
 			}
 
 			file.close();
@@ -55,27 +69,29 @@ struct Reader : ff_node_t<std::string> {
 	}
 	
     const std::vector<std::string> &filenames;
+	const uint64_t num_lines;
 };
 
 
-struct Tokenize: ff_node_t<std::string> {
+struct Tokenize : ff_node_t<std::vector<std::string>> {
 	Tokenize(umap &um_) : um(um_) {}
 
-    std::string* svc(std::string* line) {
-		char *tmpstr;
-		char *token = strtok_r(const_cast<char*>(line->c_str()), " \r\n", &tmpstr);
+    std::vector<std::string>* svc(std::vector<std::string>* lines) {
+		for (auto l = lines->begin(); l != lines->end(); l++) {
+			char *tmpstr;
+			char *token = strtok_r(const_cast<char*>(l->c_str()), " \r\n", &tmpstr);
 
-		while(token) {
-			um[std::string(token)]++;
-			token = strtok_r(NULL, " \r\n", &tmpstr);
+			while(token) {
+				um[std::string(token)]++;
+				token = strtok_r(NULL, " \r\n", &tmpstr);
 
-			total_words++;
+				total_words++;
+			}
+
+			for(volatile uint64_t j {0}; j < extraworkXline; j++);
 		}
 
-		for(volatile uint64_t j {0}; j < extraworkXline; j++);
-
-		delete line;
-
+		delete lines;
 		return GO_ON;
 	}
 
@@ -194,7 +210,10 @@ int main(int argc, char *argv[]) {
 	// used for storing results
 	std::vector<umap> umap_results(num_workers);
 
-	Reader emitter(filenames);
+	// start the time
+	auto start = omp_get_wtime();
+
+	Reader emitter(filenames, num_lines);
 
     ff_Farm<std::string> farm([&]() {	
 								   	    std::vector<std::unique_ptr<ff_node>> w;
@@ -211,6 +230,8 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+	auto stop1 = omp_get_wtime();
+
 	if (num_workers > 1) {
 		for (uint64_t id = 1; id < num_workers; id++)
 			for (auto i = umap_results[id].begin(); i != umap_results[id].end(); i++)
@@ -221,7 +242,9 @@ int main(int argc, char *argv[]) {
 	ranking rank;
 	rank.insert(umap_results[0].begin(), umap_results[0].end());
 
-	std::printf("Total time (s) %f\n", farm.ffTime());
+	auto stop2 = omp_get_wtime();
+
+	std::printf("Total time (s) %f\nCompute time (s) %f\nSorting time (s) %f\n", stop2 - start, stop1 - start, stop2 - stop1);
 	
 	if (showresults) {
 		// show the results

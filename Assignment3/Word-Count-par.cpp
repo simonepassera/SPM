@@ -236,6 +236,7 @@ int main(int argc, char *argv[]) {
 		usage_and_exit();
 	}
 
+	// left_workers = [1, filenames.size()]
 	left_workers = std::min(left_workers, filenames.size());
 
 	// used for storing results

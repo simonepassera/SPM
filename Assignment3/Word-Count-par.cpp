@@ -45,7 +45,7 @@ struct Reader : ff_monode_t<std::vector<std::string>> {
 
 		if (filenames_size % left_workers != 0)
 			if (id < left_workers)
-				num_files++; 
+				num_files++;
 
 		for (uint64_t i = id * block_size; i < ((id * block_size) + num_files); i++) {
 			std::ifstream file(filenames[i], std::ios_base::in);
@@ -219,7 +219,12 @@ int main(int argc, char *argv[]) {
 					filenames.push_back(line);
 				else
 					std::cout << line << " is not a regular file, skipt it\n";
-			}					
+			}
+
+			if (filenames.size() == 0) {
+				std::printf("%s is empty!\n", argv[1]);
+				return -1;
+			}	
 		} else {
 			std::printf("ERROR: opening file %s\n", argv[1]);
 			return -1;

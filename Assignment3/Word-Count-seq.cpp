@@ -1,3 +1,6 @@
+// compile:
+// g++ -std=c++17 -O3 -march=native -fopenmp Word-Count-seq.cpp -o Word-Count-seq
+
 #include <omp.h>  // used here just for omp_get_wtime()
 #include <cstring>
 #include <vector>

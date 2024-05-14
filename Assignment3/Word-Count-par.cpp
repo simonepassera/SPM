@@ -2,7 +2,7 @@
 // Third SPM Assignment a.a. 23/24.
 //
 // compile:
-// g++ -std=c++17 -O3 -march=native -I /home/simo/Documents/SPM/fastflow Word-Count-par.cpp -o Word-Count-par
+// g++ -std=c++17 -O3 -march=native -I /home/simo/Documents/SPM/fastflow -DNO_DEFAULT_MAPPING Word-Count-par.cpp -o Word-Count-par
 //
 
 #include <cstring>

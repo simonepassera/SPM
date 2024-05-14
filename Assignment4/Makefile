@@ -1,4 +1,5 @@
 CXX                = g++ -std=c++20
+MPICXX			   = mpicxx -std=c++20
 OPTFLAGS	   = -O3
 CXXFLAGS          += -Wall 
 INCLUDES	   = 
@@ -10,6 +11,9 @@ TARGET             = $(SOURCES:.cpp=)
 
 %: %.cpp
 	$(CXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
+
+%-mpi: %-mpi.cpp
+	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
 
 all: $(TARGET)
 

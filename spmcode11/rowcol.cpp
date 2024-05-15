@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
 	MPI_Type_commit(&row_type);
 	MPI_Type_commit(&col_type);
 	
-	if (myrank == 0) {
+	if (myrank == 0) {  // root 
 		int *data = new int[size*size];
 		
 		// initialize data

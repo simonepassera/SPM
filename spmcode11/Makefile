@@ -16,6 +16,8 @@ all: $(TARGET)
 summa_omp:summa_omp.cpp
 	$(CXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS) -fopenmp
 
+trapezoid_mpi+omp: trapezoid_mpi+omp.cpp
+	$(CXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS) -fopenmp
 
 clean: 
 	-rm -fr *.o *~

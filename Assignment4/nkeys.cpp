@@ -3,8 +3,21 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <sys/time.h>
 
 const long   SIZE = 64;
+
+double diffmsec(const struct timeval &a, const struct timeval &b) {
+	long sec  = (a.tv_sec  - b.tv_sec);
+    long usec = (a.tv_usec - b.tv_usec);
+    
+    if(usec < 0) {
+        sec--;
+        usec += 1000000;
+    }
+
+    return ((double)(sec*1000)+ (double)usec/1000.0);
+}
 
 long random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
@@ -67,6 +80,10 @@ int main(int argc, char* argv[]) {
 	if (argc == 4)
 		print = (std::stoi(argv[3]) == 1) ? true : false;
 	
+	struct timeval wt1,wt0;
+
+	gettimeofday(&wt0, NULL);
+
 	long key1, key2;
 
 	std::map<long, long> map;
@@ -129,11 +146,13 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	gettimeofday(&wt1, NULL);
+
+	std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
+
 	// printing the results
 	if (print) {
 		for(long i=0;i<nkeys; ++i)
 			std::printf("key %ld : %f\n", i, V[i]);
 	}
-
-	
 }

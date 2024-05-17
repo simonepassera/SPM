@@ -2,7 +2,7 @@
 // Third SPM Assignment a.a. 23/24.
 //
 // compile:
-// g++ -std=c++17 -O3 -march=native -I /home/simo/Documents/SPM/fastflow -DNO_DEFAULT_MAPPING Word-Count-par.cpp -o Word-Count-par
+// g++ -std=c++17 -O3 -march=native -I ./fastflow -DNO_DEFAULT_MAPPING Word-Count-par.cpp -o Word-Count-par
 //
 
 #include <cstring>
@@ -39,15 +39,13 @@ struct Reader : ff_monode_t<std::vector<std::string>> {
 
     std::vector<std::string>* svc(std::vector<std::string>*) {
 		uint64_t id = get_my_id();
-		uint64_t filenames_size = filenames.size();
-		uint64_t block_size = filenames_size / left_workers;
-		uint64_t num_files = block_size;
+		uint64_t block_size = filenames.size() / left_workers;
+		uint64_t r = filenames.size() % left_workers;
 
-		if (filenames_size % left_workers != 0)
-			if (id < left_workers)
-				num_files++;
+		long lower = (id * block_size) + (id < r ? id : r);
+		long upper = lower + block_size + (id < r ? 1 : 0);
 
-		for (uint64_t i = id * block_size; i < ((id * block_size) + num_files); i++) {
+		for (uint64_t i = lower; i < upper; i++) {
 			std::ifstream file(filenames[i], std::ios_base::in);
 
 			if (file.is_open()) {

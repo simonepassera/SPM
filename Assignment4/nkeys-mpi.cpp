@@ -7,7 +7,7 @@
 #include <sys/time.h>
 
 const long SIZE = 64;
-const long STREAM_SIZE = 100000;
+const long STREAM_SIZE = 128;
 
 double diffmsec(const struct timeval &a, const struct timeval &b) {
 	long sec  = (a.tv_sec  - b.tv_sec);
@@ -66,16 +66,6 @@ float compute(const long c1, const long c2, long key1, long key2) {
 	return r;
 }
 
-long findOwner(std::vector<std::set<long>> &setKeys, long key) {
-	int i = 0;
-
-	for (auto it = setKeys.begin(); it != setKeys.end(); it++, i++)
-		if (it->contains(key))
-			return i;
-	
-	return -1;
-}
-
 int main(int argc, char* argv[]) {
 	struct timeval wt1, wt0;
 	gettimeofday(&wt0, NULL);
@@ -105,20 +95,18 @@ int main(int argc, char* argv[]) {
 	if (argc == 4)
 		print = (std::stoi(argv[3]) == 1) ? true : false;
 
-	std::vector<std::set<long>> setKeys(size);
+	std::set<long> myKeys;
 	std::map<long, float> V;
 
 	long block_size = nkeys / size;
 	long r = nkeys % size;
 
-	for (int i = 0; i < size; i++) {
-		long lower = (i * block_size) + (i < r ? i : r);
-		long upper = lower + block_size + (i < r ? 1 : 0);
-		
-		for (int k = lower; k < upper; k++) {
-			setKeys[i].insert(k);
-			if (i == rank) V[k] = 0;
-		}
+	long lower = (rank * block_size) + (rank < r ? rank : r);
+	long upper = lower + block_size + (rank < r ? 1 : 0);
+
+	for (long i = lower; i < upper; i++) {
+		myKeys.insert(i);
+		V[i] = 0;
 	}
 
 	std::vector<long> map(nkeys, 0);
@@ -157,15 +145,13 @@ int main(int argc, char* argv[]) {
 			map[key1]++;
 			map[key2]++;
 
-			if (setKeys[rank].contains(key1)) {
+			if (myKeys.contains(key1)) {
 				if (map[key1] == SIZE) {
 					if (map[key2] > SIZE) {
 						count = map[key2] - SIZE;
 
 						while (true) {
-							MPI_Request req;
-							MPI_Irecv(&map.data()[key2], 1, MPI_LONG, findOwner(setKeys, key2), key2, MPI_COMM_WORLD,&req);
-							MPI_Wait(&req, MPI_STATUS_IGNORE);
+							MPI_Recv(&map.data()[key2], 1, MPI_LONG, MPI_ANY_SOURCE, key2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 							if (count > (SIZE - map[key2])) count -= (SIZE - map[key2]);
 							else break;
@@ -189,15 +175,13 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
-			if (setKeys[rank].contains(key2)) {
+			if (myKeys.contains(key2)) {
 				if (map[key2] == SIZE) {
 					if (map[key1] > SIZE) {
 						count = map[key1] - SIZE;
 
 						while (true) {
-							MPI_Request req;
-							MPI_Irecv(&map.data()[key1], 1, MPI_LONG, findOwner(setKeys, key1), key1, MPI_COMM_WORLD,&req);
-							MPI_Wait(&req, MPI_STATUS_IGNORE);
+							MPI_Recv(&map.data()[key1], 1, MPI_LONG, MPI_ANY_SOURCE, key1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 							if (count > (SIZE - map[key1])) count -= (SIZE - map[key1]);
 							else break;
@@ -240,15 +224,13 @@ int main(int argc, char* argv[]) {
 		for(long j = 0; j < nkeys; j++) {
 			if (i == j) continue;
 
-			if (setKeys[rank].contains(i)) {
+			if (myKeys.contains(i)) {
 				if (map[i] > 0) {
-					if (!setKeys[rank].contains(j) && (map[j] >= SIZE)) {
+					if (!myKeys.contains(j) && (map[j] >= SIZE)) {
 						count = map[j] - SIZE;
 
 						while (true) {
-							MPI_Request req;
-							MPI_Irecv(&map.data()[j], 1, MPI_LONG, findOwner(setKeys, j), j, MPI_COMM_WORLD, &req);
-							MPI_Wait(&req, MPI_STATUS_IGNORE);
+							MPI_Recv(&map.data()[j], 1, MPI_LONG, MPI_ANY_SOURCE, j, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 							if (count >= (SIZE - map[j])) count -= (SIZE - map[j]);
 							else break;
@@ -262,15 +244,13 @@ int main(int argc, char* argv[]) {
 				}
 			}
 
-			if (setKeys[rank].contains(j)) {
+			if (myKeys.contains(j)) {
 				if (map[j] > 0) {
-					if (!setKeys[rank].contains(i) && (map[i] >= SIZE)) {
+					if (!myKeys.contains(i) && (map[i] >= SIZE)) {
 						count = map[i] - SIZE;
 
 						while (true) {
-							MPI_Request req;
-							MPI_Irecv(&map.data()[i], 1, MPI_LONG, findOwner(setKeys, i), i, MPI_COMM_WORLD, &req);
-							MPI_Wait(&req, MPI_STATUS_IGNORE);
+							MPI_Recv(&map.data()[i], 1, MPI_LONG, MPI_ANY_SOURCE, i, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 							if (count >= (SIZE - map[i])) count -= (SIZE - map[i]);
 							else break;
@@ -289,10 +269,11 @@ int main(int argc, char* argv[]) {
 	MPI_Finalize();
 
 	gettimeofday(&wt1, NULL);
-	if (rank == 0) std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
 
 	// printing the results
 	if (print)
 		for(auto key : V)
 	 		std::printf("key %ld : %f\n", key.first, key.second);
+	
+	if (rank == 0) std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
 }

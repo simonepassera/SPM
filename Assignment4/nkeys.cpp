@@ -144,10 +144,11 @@ int main(int argc, char* argv[]) {
 	}
 
 	gettimeofday(&wt1, NULL);
-	std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
 
 	// printing the results
 	if (print)
 		for(long i=0;i<nkeys; ++i)
 			std::printf("key %ld : %f\n", i, V[i]);
+	
+	std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
 }

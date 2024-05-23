@@ -7,7 +7,7 @@
 #include <sys/time.h>
 
 const long SIZE = 64;
-const long STREAM_SIZE = 128;
+const long STREAM_SIZE = 256;
 
 double diffmsec(const struct timeval &a, const struct timeval &b) {
 	long sec  = (a.tv_sec  - b.tv_sec);
@@ -67,9 +67,6 @@ float compute(const long c1, const long c2, long key1, long key2) {
 }
 
 int main(int argc, char* argv[]) {
-	struct timeval wt1, wt0;
-	gettimeofday(&wt0, NULL);
-
 	MPI_Init(&argc, &argv);
 
 	int rank;
@@ -111,15 +108,20 @@ int main(int argc, char* argv[]) {
 
 	std::vector<long> map(nkeys, 0);
 	long key1, key2, newKey1, count;
-	long sequence[STREAM_SIZE*2];
-	long sequence_size;
-	long total_sequence = 0;
+	long sequence[STREAM_SIZE*2], sequence_size, total_sequence = 0;
 	float r1 = 0, r2 = 0;
 	bool resetkey1 = false, resetkey2 = false;
 
 	MPI_Request ibcast_request;
 	std::vector<MPI_Request> request_key1(size-1);
 	std::vector<MPI_Request> request_key2(size-1);
+
+	MPI_Comm ibcast_communicator;
+    MPI_Comm_dup(MPI_COMM_WORLD, &ibcast_communicator);
+
+	// Measure the current time
+	MPI_Barrier(MPI_COMM_WORLD);
+	double start = MPI_Wtime();
 
 	while(total_sequence < length) {
 		sequence_size = std::min(length-total_sequence, STREAM_SIZE);
@@ -135,7 +137,7 @@ int main(int argc, char* argv[]) {
 			}	
 		}
 
-		MPI_Ibcast(&sequence, sequence_size * 2, MPI_LONG, 0, MPI_COMM_WORLD, &ibcast_request);
+		MPI_Ibcast(&sequence, sequence_size * 2, MPI_LONG, 0, ibcast_communicator, &ibcast_request);
 		if (rank != 0) MPI_Wait(&ibcast_request, MPI_STATUS_IGNORE);
 
 		for (int j = 0, i = 0; j < sequence_size; j++, i+=2) {
@@ -186,6 +188,7 @@ int main(int argc, char* argv[]) {
 							if (count > (SIZE - map[key1])) count -= (SIZE - map[key1]);
 							else break;
 						}
+						
 						map[key1] += count;
 					}
 					
@@ -266,14 +269,51 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	MPI_Finalize();
+	std::vector<float> *results = nullptr;
+	std::vector<int> *recvcounts = nullptr;
+	std::vector<int> *displs = nullptr;
 
-	gettimeofday(&wt1, NULL);
+	if (rank == 0) {
+		results = new std::vector<float>(nkeys);
+		recvcounts = new std::vector<int>(size);
+		displs = new std::vector<int>(size);
 
-	// printing the results
-	if (print)
-		for(auto key : V)
-	 		std::printf("key %ld : %f\n", key.first, key.second);
+		int displ = 0;
+
+		for (int i = 0; i < size; i++) {
+			recvcounts->at(i) = block_size;
+
+			if (r > 0) {
+				recvcounts->at(i)++;
+				r--;
+			}
+
+			displs->at(i) = displ;
+			displ += recvcounts->at(i);
+		}
+	}
 	
-	if (rank == 0) std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
+	std::vector<float> myResults(V.size());
+
+    for (int i = lower, j = 0; i < upper; i++, j++)
+		myResults[j] = V[i];
+
+	if (rank == 0)
+		MPI_Gatherv(myResults.data(), myResults.size(), MPI_FLOAT, results->data(), recvcounts->data(), displs->data(), MPI_FLOAT, 0, MPI_COMM_WORLD);
+	else
+		MPI_Gatherv(myResults.data(), myResults.size(), MPI_FLOAT, nullptr, nullptr, nullptr, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+	// Measure the current time
+	double end = MPI_Wtime();
+
+	MPI_Finalize();
+	
+	if (rank == 0) {
+		std::printf("Total time: %f (S)\n", end-start);
+
+		// printing the results
+		if (print)
+			for(long i = 0; i < nkeys; i++)
+	 			std::printf("key %ld : %f\n", i, results->at(i));
+	}
 }

@@ -61,9 +61,6 @@ float compute(const long c1, const long c2, long key1, long key2) {
 }
 
 int main(int argc, char* argv[]) {
-	struct timeval wt1, wt0;
-	gettimeofday(&wt0, NULL);
-
 	if (argc < 3) {
 		std::printf("use: %s nkeys length [print(0|1)]\n", argv[0]);
 		std::printf("     print: 0 disabled, 1 enabled\n");
@@ -84,6 +81,9 @@ int main(int argc, char* argv[]) {
 	std::vector<float> V(nkeys, 0);
 	bool resetkey1=false;
 	bool resetkey2=false;
+
+	struct timeval wt1, wt0;
+	gettimeofday(&wt0, NULL);
 
 	for(int i = 0; i < length; i++) {
 		key1 = random(0, nkeys-1);  // value in [0,nkeys[
@@ -145,10 +145,10 @@ int main(int argc, char* argv[]) {
 
 	gettimeofday(&wt1, NULL);
 
+	std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
+
 	// printing the results
 	if (print)
-		for(long i=0;i<nkeys; ++i)
+		for(long i = 0; i < nkeys; i++)
 			std::printf("key %ld : %f\n", i, V[i]);
-	
-	std::printf("Total time: %f (S)\n", diffmsec(wt1, wt0)/1000);
 }

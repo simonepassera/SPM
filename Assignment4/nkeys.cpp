@@ -15,7 +15,7 @@ double diffmsec(const struct timeval &a, const struct timeval &b) {
         usec += 1000000;
     }
 
-    return ((double)(sec*1000)+ (double)usec/1000.0);
+    return ((double)(sec*1000) + (double)usec/1000.0);
 }
 
 long random(const int &min, const int &max) {

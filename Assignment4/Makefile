@@ -15,6 +15,9 @@ TARGET             = $(SOURCES:.cpp=)
 %-mpi: %-mpi.cpp
 	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
 
+%-mpi+omp: %-mpi+omp.cpp
+	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -fopenmp -o $@ $< $(LIBS)
+
 all: $(TARGET)
 
 clean: 

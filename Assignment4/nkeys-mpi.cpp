@@ -9,18 +9,6 @@
 const long SIZE = 64;
 const long STREAM_SIZE = 256;
 
-double diffmsec(const struct timeval &a, const struct timeval &b) {
-	long sec  = (a.tv_sec  - b.tv_sec);
-    long usec = (a.tv_usec - b.tv_usec);
-    
-    if(usec < 0) {
-        sec--;
-        usec += 1000000;
-    }
-
-    return ((double)(sec*1000) + (double)usec/1000.0);
-}
-
 long random(const int &min, const int &max) {
 	static std::mt19937 generator(117);
 	std::uniform_int_distribution<long> distribution(min, max);
@@ -35,7 +23,7 @@ void init(auto &M, const long c1, const long c2, const long key) {
 
 // Matrix multiplication: C = A x B  A[c1][c2] B[c2][c1] C[c1][c1]
 // mm returns the sum of the elements of the C matrix
-auto mm(const auto& A, const auto& B, const long c1,const long c2) {
+auto mm(const auto& A, const auto& B, const long c1, const long c2) {
 	float sum {0};
 	
     for (long i = 0; i < c1; i++) {
@@ -52,7 +40,7 @@ auto mm(const auto& A, const auto& B, const long c1,const long c2) {
 	return sum;
 }
 
-// initialize two matrices with the computed values of the keys
+// Initialize two matrices with the computed values of the keys
 // and execute a matrix multiplication between the two matrices
 // to obtain the sum of the elements of the result matrix 
 float compute(const long c1, const long c2, long key1, long key2) {
@@ -61,7 +49,7 @@ float compute(const long c1, const long c2, long key1, long key2) {
 
 	init(A, c1, c2, key1);
 	init(B, c2, c1, key2);
-	auto r = mm(A,B, c1,c2);
+	auto r = mm(A, B, c1, c2);
 	
 	return r;
 }

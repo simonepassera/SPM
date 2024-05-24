@@ -301,8 +301,8 @@ int main(int argc, char* argv[]) {
 			for(long i = 0; i < nkeys; i++)
 	 			std::printf("key %ld : %f\n", i, results[i]);
 		
-		delete results;
-		delete recvcounts;
-		delete displs;
+		delete[] results;
+		delete[] recvcounts;
+		delete[] displs;
 	}
 }

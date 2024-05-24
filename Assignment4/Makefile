@@ -1,22 +1,22 @@
-CXX                = g++ -std=c++20
-MPICXX			   = mpicxx -std=c++20
-OPTFLAGS	   = -O3
-CXXFLAGS          += -Wall 
-INCLUDES	   = 
-LIBS               = 
-SOURCES            = $(wildcard *.cpp)
-TARGET             = $(SOURCES:.cpp=)
+CXX			= g++ -std=c++20
+MPICXX		= mpicxx -std=c++20
+OPTFLAGS	= -O3
+CXXFLAGS	+= -Wall 
+INCLUDES	= 
+LIBS		= -fopenmp
+SOURCES		= $(wildcard *.cpp)
+TARGET		= $(SOURCES:.cpp=)
 
 .PHONY: all clean cleanall 
 
 %: %.cpp
-	$(CXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
+	$(CXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $<
 
 %-mpi: %-mpi.cpp
-	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
+	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $<
 
 %-mpi+omp: %-mpi+omp.cpp
-	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -fopenmp -o $@ $< $(LIBS)
+	$(MPICXX) $(INCLUDES) $(CXXFLAGS) $(OPTFLAGS) -o $@ $< $(LIBS)
 
 all: $(TARGET)
 

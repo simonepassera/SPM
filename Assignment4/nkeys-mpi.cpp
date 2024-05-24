@@ -269,27 +269,27 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	std::vector<float> *results = nullptr;
-	std::vector<int> *recvcounts = nullptr;
-	std::vector<int> *displs = nullptr;
+	float *results = nullptr;
+	int *recvcounts = nullptr;
+	int *displs = nullptr;
 
 	if (rank == 0) {
-		results = new std::vector<float>(nkeys);
-		recvcounts = new std::vector<int>(size);
-		displs = new std::vector<int>(size);
+		results = new float[nkeys];
+		recvcounts = new int[size];
+		displs = new int[size];
 
 		int displ = 0;
 
 		for (int i = 0; i < size; i++) {
-			recvcounts->at(i) = block_size;
+			recvcounts[i] = block_size;
 
 			if (r > 0) {
-				recvcounts->at(i)++;
+				recvcounts[i]++;
 				r--;
 			}
 
-			displs->at(i) = displ;
-			displ += recvcounts->at(i);
+			displs[i] = displ;
+			displ += recvcounts[i];
 		}
 	}
 	
@@ -298,10 +298,7 @@ int main(int argc, char* argv[]) {
     for (int i = lower, j = 0; i < upper; i++, j++)
 		myResults[j] = V[i];
 
-	if (rank == 0)
-		MPI_Gatherv(myResults.data(), myResults.size(), MPI_FLOAT, results->data(), recvcounts->data(), displs->data(), MPI_FLOAT, 0, MPI_COMM_WORLD);
-	else
-		MPI_Gatherv(myResults.data(), myResults.size(), MPI_FLOAT, nullptr, nullptr, nullptr, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	MPI_Gatherv(myResults.data(), myResults.size(), MPI_FLOAT, results, recvcounts, displs, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 	// Measure the current time
 	double end = MPI_Wtime();
@@ -314,6 +311,10 @@ int main(int argc, char* argv[]) {
 		// printing the results
 		if (print)
 			for(long i = 0; i < nkeys; i++)
-	 			std::printf("key %ld : %f\n", i, results->at(i));
+	 			std::printf("key %ld : %f\n", i, results[i]);
+		
+		delete results;
+		delete recvcounts;
+		delete displs;
 	}
 }

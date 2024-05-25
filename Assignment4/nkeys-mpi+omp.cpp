@@ -27,7 +27,7 @@ auto mm(const auto& A, const auto& B, const long c1, const long c2) {
 	float sum {0};
 	std::vector<std::vector<float>> C(c1, std::vector<float>(c1, 0.0));
 	
-	#pragma omp parallel for collapse(2)
+	#pragma omp parallel for collapse(2) schedule(static)
     for (long i = 0; i < c1; i++)
         for (long j = 0; j < c1; j++)
 			for (long k = 0; k < c2; k++)

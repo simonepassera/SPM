@@ -53,11 +53,11 @@ float compute(const long c1, const long c2, long key1, long key2) {
 	return r;
 }
 
-int nextDest(int curDest) {
-	if (curDest == SIZE-1)
-		return 1;
+int nextDest(int &curDest, int size) {
+	if (curDest == size-1)
+		return (curDest = 1);
 	else
-		return curDest + 1;
+		return ++curDest;
 }
 
 int main(int argc, char* argv[]) {
@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
 				buf1[2] = key1;
 				buf1[3] = key2;
 
-				MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest), 0, MPI_COMM_WORLD, &request_key1);
+				MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key1);
 				send_for1[key1] = true;		
 			}
 
@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
 				buf2[2] = key2;
 				buf2[3] = key1;
 
-				MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest), 0, MPI_COMM_WORLD, &request_key2);
+				MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key2);
 				send_for1[key2] = true;	
 			}
 
@@ -218,7 +218,7 @@ int main(int argc, char* argv[]) {
 					buf1[2] = i;
 					buf1[3] = j;
 
-					MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest), 0, MPI_COMM_WORLD, &request_key1);
+					MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key1);
 					send_for2[i] = true;
 
 					if (send_for2[j]) {
@@ -232,7 +232,7 @@ int main(int argc, char* argv[]) {
 					buf2[2] = j;
 					buf2[3] = i;
 
-					MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest), 0, MPI_COMM_WORLD, &request_key2);
+					MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key2);
 					send_for2[j] = true;
 
 					MPI_Wait(&request_key1, MPI_STATUS_IGNORE);

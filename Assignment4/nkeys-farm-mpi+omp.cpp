@@ -55,7 +55,7 @@ float compute(const long c1, const long c2, long key1, long key2) {
 
 int nextDest(int &curDest, int size) {
 	if (curDest == size-1)
-		return (curDest = 1);
+		return (curDest = 0);
 	else
 		return ++curDest;
 }
@@ -93,11 +93,6 @@ int main(int argc, char* argv[]) {
 	int size; 
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-	if (size < 2) {
-		std::printf("Launch the program with at least 2 processes\n");
-		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-	}
-
 	long nkeys  = std::stol(argv[1]); // Total number of keys
 	long length = std::stol(argv[2]); // Stream length
 	bool print = false;
@@ -109,11 +104,12 @@ int main(int argc, char* argv[]) {
 	std::vector<long> map(nkeys, 0);
 	std::vector<bool> send_for1(nkeys, false);
 
-	long key1, key2, count, buf1[4], buf2[4], EOS = -1;
+	long key1, key2, newKey1, count, buf1[4], buf2[4], EOS = -1;
 	float r = 0;
 	int dest = 0;
+	bool resetkey1 = false;
 
-	MPI_Request request_key1, request_key2;
+	MPI_Request request_key1 = MPI_REQUEST_NULL, request_key2 = MPI_REQUEST_NULL;
 
 	// Measure the current time
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -158,23 +154,45 @@ int main(int argc, char* argv[]) {
 			}
 
 			if (map[key1] == SIZE && map[key2] != 0) {
-				buf1[0] = map[key1];
-				buf1[1] = map[key2];
-				buf1[2] = key1;
-				buf1[3] = key2;
+				if (nextDest(dest, size) == 0) {
+					r = compute(map[key1], map[key2], key1, key2);
+					V[key1] += r;
 
-				MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key1);
-				send_for1[key1] = true;		
+					auto _r = static_cast<unsigned long>(r) % SIZE;
+					newKey1 = (_r>(SIZE/2)) ? 0 : _r;
+					resetkey1 = true;
+				} else {
+					buf1[0] = map[key1];
+					buf1[1] = map[key2];
+					buf1[2] = key1;
+					buf1[3] = key2;
+
+					MPI_Isend(buf1, 4, MPI_LONG, dest, 0, MPI_COMM_WORLD, &request_key1);
+					send_for1[key1] = true;
+				}		
 			}
 
 			if (map[key2] == SIZE && map[key1] != 0 && nkeys != 1) {
-				buf2[0] = map[key2];
-				buf2[1] = map[key1];
-				buf2[2] = key2;
-				buf2[3] = key1;
+				if (nextDest(dest, size) == 0) {
+					r = compute(map[key2], map[key1], key2, key1);
+					V[key2] += r;
 
-				MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key2);
-				send_for1[key2] = true;	
+					auto _r = static_cast<unsigned long>(r) % SIZE;
+					map[key2] = (_r>(SIZE/2)) ? 0 : _r;
+				} else {
+					buf2[0] = map[key2];
+					buf2[1] = map[key1];
+					buf2[2] = key2;
+					buf2[3] = key1;
+
+					MPI_Isend(buf2, 4, MPI_LONG, dest, 0, MPI_COMM_WORLD, &request_key2);
+					send_for1[key2] = true;	
+				}
+			}
+
+			if (resetkey1) {
+				map[key1] = newKey1;
+				resetkey1 = false;
 			}
 
 			if (send_for1[key1]) MPI_Wait(&request_key1, MPI_STATUS_IGNORE);
@@ -213,13 +231,18 @@ int main(int argc, char* argv[]) {
 						send_for2[i] = false;
 					}
 
-					buf1[0] = map[i];
-					buf1[1] = map[j];
-					buf1[2] = i;
-					buf1[3] = j;
+					if (nextDest(dest, size) == 0) {
+						r = compute(map[i], map[j], i, j);
+						V[i] += r;
+					} else {
+						buf1[0] = map[i];
+						buf1[1] = map[j];
+						buf1[2] = i;
+						buf1[3] = j;
 
-					MPI_Isend(buf1, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key1);
-					send_for2[i] = true;
+						MPI_Isend(buf1, 4, MPI_LONG, dest, 0, MPI_COMM_WORLD, &request_key1);
+						send_for2[i] = true;
+					}
 
 					if (send_for2[j]) {
 						MPI_Recv(&r, 1, MPI_FLOAT, MPI_ANY_SOURCE, j, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -227,16 +250,21 @@ int main(int argc, char* argv[]) {
 						send_for2[j] = false;
 					}
 
-					buf2[0] = map[j];
-					buf2[1] = map[i];
-					buf2[2] = j;
-					buf2[3] = i;
+					if (nextDest(dest, size) == 0) {
+						r = compute(map[j], map[i], j, i);
+						V[j] += r;
+					} else {
+						buf2[0] = map[j];
+						buf2[1] = map[i];
+						buf2[2] = j;
+						buf2[3] = i;
 
-					MPI_Isend(buf2, 4, MPI_LONG, nextDest(dest, size), 0, MPI_COMM_WORLD, &request_key2);
-					send_for2[j] = true;
+						MPI_Isend(buf2, 4, MPI_LONG, dest, 0, MPI_COMM_WORLD, &request_key2);
+						send_for2[j] = true;
+					}
 
-					MPI_Wait(&request_key1, MPI_STATUS_IGNORE);
-					MPI_Wait(&request_key2, MPI_STATUS_IGNORE);
+					if (request_key1 != MPI_REQUEST_NULL) MPI_Wait(&request_key1, MPI_STATUS_IGNORE);
+					if (request_key2 != MPI_REQUEST_NULL) MPI_Wait(&request_key2, MPI_STATUS_IGNORE);
 				}
 			}
 		}

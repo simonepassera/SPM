@@ -125,7 +125,7 @@ int main(int argc, char* argv[]) {
 			}	
 		}
 
-		MPI_Ibcast(&sequence, sequence_size * 2, MPI_LONG, 0, ibcast_communicator, &ibcast_request);
+		MPI_Ibcast(sequence, sequence_size * 2, MPI_LONG, 0, ibcast_communicator, &ibcast_request);
 		if (rank != 0) MPI_Wait(&ibcast_request, MPI_STATUS_IGNORE);
 
 		for (int j = 0, i = 0; j < sequence_size; j++, i+=2) {
